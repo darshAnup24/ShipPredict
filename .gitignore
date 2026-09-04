@@ -1,0 +1,17 @@
+# you shouldn't commit these into source control
+# these are the default directory names, adjust/add to fit your needs
+target/
+dbt_packages/
+logs/
+dbt_internal_packages/
+
+# Raw source data is downloaded from Kaggle/Snowflake - do not commit (~180MB)
+data/
+
+# Local secrets - never commit
+.dbt/
+profiles.yml
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
