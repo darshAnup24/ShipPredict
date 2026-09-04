@@ -1,0 +1,50 @@
+version: 2
+
+sources:
+  - name: raw
+    database: SUPPLY_CHAIN_DB
+    schema: RAW
+    description: "Raw source tables loaded from DataCo Supply Chain dataset"
+
+    tables:
+      - name: raw_supply_chain
+        description: "Raw supply chain order data - 180,519 rows, 47 columns after PII removal"
+        columns:
+          - name: ORDER_ITEM_ID
+            description: "Primary key - unique per row - grain of this table"
+          - name: ORDER_ID
+            description: "Order identifier - one order can have multiple items"
+          - name: CUSTOMER_ID
+            description: "Customer identifier"
+          - name: LATE_DELIVERY_RISK
+            description: "Target variable - 1 = late, 0 = not late"
+          - name: DELIVERY_STATUS
+            description: "Advance shipping, Late delivery, Shipping on time, Shipping canceled"
+          - name: SHIPPING_MODE
+            description: "Standard Class, First Class, Second Class, Same Day"
+          - name: MARKET
+            description: "Africa, Europe, LATAM, Pacific Asia, USCA"
+          - name: ORDER_DATE
+            description: "Order date as VARCHAR - format M/D/YYYY HH:MM"
+          - name: SHIPPING_DATE
+            description: "Shipping date as VARCHAR - format M/D/YYYY HH:MM"
+
+      - name: raw_web_traffic
+        description: "Tokenized web access logs - 469,977 rows, 8 columns"
+        columns:
+          - name: IP_ADDRESS
+            description: "Visitor IP address"
+          - name: PRODUCT
+            description: "Product page visited"
+          - name: CATEGORY
+            description: "Product category"
+          - name: DEPARTMENT
+            description: "Store department"
+          - name: DATE_TIMESTAMP
+            description: "Visit timestamp as VARCHAR - format M/D/YYYY H:MM"
+          - name: MONTH
+            description: "Month name - Sep, Oct, Nov, Dec, Jan"
+          - name: HOUR
+            description: "Hour of visit - integer 0-23"
+          - name: URL
+            description: "Full URL path visited"

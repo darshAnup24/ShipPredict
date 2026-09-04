@@ -1,0 +1,99 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: "Cleaned order data from raw supply chain - one row per order item"
+    columns:
+      - name: order_item_id
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+        tests:
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+      - name: late_delivery_risk
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: shipping_mode
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Standard Class', 'First Class', 'Second Class', 'Same Day']
+      - name: delivery_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Late delivery', 'Advance shipping', 'Shipping on time', 'Shipping canceled']
+      - name: market
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['LATAM', 'Europe', 'Pacific Asia', 'USCA', 'Africa']
+      - name: order_date
+        tests:
+          - not_null
+      - name: shipping_date
+        tests:
+          - not_null
+      - name: days_for_shipping_real
+        tests:
+          - not_null
+      - name: sales
+        tests:
+          - not_null
+
+  - name: stg_customers
+    description: "Deduplicated customer data"
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_segment
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Consumer', 'Corporate', 'Home Office']
+
+  - name: stg_products
+    description: "Deduplicated product data"
+    columns:
+      - name: product_card_id
+        tests:
+          - unique
+          - not_null
+      - name: product_name
+        tests:
+          - not_null
+      - name: category_name
+        tests:
+          - not_null
+      - name: department_name
+        tests:
+          - not_null
+
+  - name: stg_web_traffic
+    description: "Cleaned web traffic data"
+    columns:
+      - name: ip_address
+        tests:
+          - not_null
+      - name: visit_timestamp
+        tests:
+          - not_null
+      - name: product_name
+        tests:
+          - not_null
+      - name: department_name
+        tests:
+          - not_null
