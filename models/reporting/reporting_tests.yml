@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: rpt_delivery_kpis
+    description: "Delivery KPIs aggregated by time, shipping mode, market, region"
+    columns:
+      - name: shipping_mode
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Standard Class', 'First Class', 'Second Class', 'Same Day']
+      - name: market
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['LATAM', 'Europe', 'Pacific Asia', 'USCA', 'Africa']
+      - name: total_orders
+        tests:
+          - not_null
+      - name: late_delivery_rate_pct
+        tests:
+          - not_null
+
+  - name: rpt_revenue_analysis
+    description: "Revenue analysis aggregated by time, market, segment, department"
+    columns:
+      - name: market
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['LATAM', 'Europe', 'Pacific Asia', 'USCA', 'Africa']
+      - name: total_orders
+        tests:
+          - not_null
+      - name: total_sales
+        tests:
+          - not_null
+
+  - name: rpt_risk_prediction
+    description: "Risk prediction features aggregated by shipping mode, market, region"
+    columns:
+      - name: shipping_mode
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Standard Class', 'First Class', 'Second Class', 'Same Day']
+      - name: market
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['LATAM', 'Europe', 'Pacific Asia', 'USCA', 'Africa']
+      - name: late_delivery_rate_pct
+        tests:
+          - not_null
+
+  - name: rpt_web_traffic
+    description: "Web traffic aggregated by time, department, category, product"
+    columns:
+      - name: department_name
+        tests:
+          - not_null
+      - name: category_name
+        tests:
+          - not_null
+      - name: product_name
+        tests:
+          - not_null
+      - name: total_visits
+        tests:
+          - not_null
+      - name: time_of_day
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Late Night', 'Morning', 'Afternoon', 'Evening']
