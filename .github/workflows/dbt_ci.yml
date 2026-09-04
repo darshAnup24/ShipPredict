@@ -1,0 +1,64 @@
+name: dbt CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  dbt-build:
+    name: dbt Build and Test
+    runs-on: ubuntu-latest
+
+    env:
+      SNOWFLAKE_ACCOUNT: svibshq-xeb14052
+      SNOWFLAKE_USER: PGORKHAR22
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE: ACCOUNTADMIN
+      SNOWFLAKE_DATABASE: SUPPLY_CHAIN_DB
+      SNOWFLAKE_WAREHOUSE: SUPPLY_CHAIN_WH
+      SNOWFLAKE_SCHEMA: STAGING
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dbt Snowflake
+        run: |
+          pip install dbt-snowflake
+
+      - name: Create dbt profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          default:
+            target: dev
+            outputs:
+              dev:
+                type: snowflake
+                account: ${{ env.SNOWFLAKE_ACCOUNT }}
+                user: ${{ env.SNOWFLAKE_USER }}
+                password: ${{ env.SNOWFLAKE_PASSWORD }}
+                role: ${{ env.SNOWFLAKE_ROLE }}
+                database: ${{ env.SNOWFLAKE_DATABASE }}
+                warehouse: ${{ env.SNOWFLAKE_WAREHOUSE }}
+                schema: ${{ env.SNOWFLAKE_SCHEMA }}
+                threads: 4
+          EOF
+
+      - name: dbt deps
+        run: dbt deps
+
+      - name: dbt build
+        run: dbt build
+
+      - name: dbt test
+        run: dbt test
