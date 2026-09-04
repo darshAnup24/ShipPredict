@@ -1,0 +1,774 @@
+SUPPLY CHAIN LATE DELIVERY RISK INTELLIGENCE PLATFORM
+PLACEMENT AND TECHNICAL INTERVIEW STUDY GUIDE
+====================================================
+
+1. THE PROJECT IN ONE SENTENCE
+------------------------------
+
+This project is an end-to-end data analytics and offline machine-learning platform that loads supply-chain and website-traffic data into Snowflake, cleans and models it with dbt, schedules the analytics pipeline with Airflow, validates data quality through automated tests, and trains a LightGBM model to estimate late-delivery risk.
+
+
+2. THE BUSINESS PROBLEM
+-----------------------
+
+Customers expect orders to arrive on time. A delayed order can cause customer dissatisfaction, support costs, cancellations, and lost revenue. Operations teams often learn about a delay only after it has happened. The goal of this project is to give them earlier visibility into risky orders and show where delays are concentrated.
+
+The platform answers questions such as:
+
+- Which shipping mode has the highest late-delivery rate?
+- Which regions, markets, departments, and customer segments are most exposed?
+- How much revenue or profit is associated with late orders?
+- Can information available around order time predict whether an order will be late?
+- What website traffic patterns exist by product, department, hour, and month?
+
+The README reports that First Class has a 95.6% late-delivery rate, compared with 38.09% for Standard Class. This is an actionable finding because shipping mode can be changed by the business.
+
+
+3. PROJECT SCOPE AND DATA
+-------------------------
+
+Source dataset: DataCo Smart Supply Chain Dataset from Kaggle.
+
+Two logical sources are documented:
+
+1. Supply-chain transactions
+   - 180,519 rows
+   - One row represents an order item, not necessarily an entire order.
+   - Includes order, customer, product, financial, geographic, shipping, and delivery fields.
+
+2. Tokenized web-access logs
+   - 469,977 rows
+   - One row represents a web visit/event.
+   - Includes IP address, URL, visit time, product, category, and department.
+
+The data covers approximately January 2015 to January 2018.
+
+Target variable:
+
+LATE_DELIVERY_RISK is binary:
+- 1 means late delivery.
+- 0 means not late.
+
+The README reports 98,977 late records (54.8%) and 81,542 non-late records (45.2%). This is a moderately imbalanced binary-classification problem.
+
+
+4. ESSENTIAL TERMS FROM THE BASICS
+----------------------------------
+
+Supply chain:
+The connected process through which products move from suppliers to sellers and customers. This project focuses mainly on the order-to-delivery portion.
+
+Late-delivery risk:
+The probability or binary indicator that a shipment will arrive later than its planned schedule.
+
+ETL versus ELT:
+- ETL means Extract, Transform, Load. Transformation happens before loading into the warehouse.
+- ELT means Extract, Load, Transform. Raw data is loaded first, then transformed inside the warehouse.
+This project mainly follows ELT: CSV data is loaded to Snowflake RAW tables and dbt runs SQL transformations inside Snowflake.
+
+Data warehouse:
+A database optimized for analytical queries across large historical datasets. Snowflake is the warehouse here.
+
+Schema:
+A logical namespace inside a database. The project documents RAW and STAGING schemas. RAW stores source-like data; dbt-generated analytical models are created in the configured target schema.
+
+Data model:
+A table or view that represents data for a defined business purpose. In dbt, each .sql file normally produces one model.
+
+Grain:
+What one row represents. Grain must be stated before calculating metrics.
+- stg_orders and fct_orders: one row per order item.
+- stg_customers/dim_customers: intended to be one row per customer.
+- stg_products/dim_products: intended to be one row per product.
+- reporting models: one row per combination of their GROUP BY dimensions.
+
+Fact table:
+A table of measurable business events. fct_orders is the central fact table and contains quantities, sales, profit, dates, and delivery outcomes at order-item grain.
+
+Dimension table:
+A table describing business entities such as customers, products, or geography. Dimensions make filtering and grouping facts easier.
+
+KPI:
+Key Performance Indicator. Examples include late-delivery percentage, average days late, total sales, and total profit.
+
+View versus table:
+- A view stores SQL logic and computes results when queried. It is cheap to store and always reflects source changes, but can be slower for repeated queries.
+- A table physically stores results. It is faster to query but must be rebuilt or refreshed.
+The project materializes staging models as views and marts/reporting models as tables.
+
+Orchestration:
+Coordinating tasks in a required order and on a schedule. Airflow is used for this.
+
+DAG:
+Directed Acyclic Graph. It represents tasks and one-way dependencies without loops. The Airflow DAG specifies load -> build -> test -> verify.
+
+CI/CD:
+Continuous Integration/Continuous Delivery. GitHub Actions checks dbt changes after pushes and pull requests to main.
+
+Feature:
+An input variable used by an ML model, such as shipping mode or scheduled shipping days.
+
+Label/target:
+The result the model learns to predict. Here it is LATE_DELIVERY_RISK.
+
+Classification:
+Predicting a category. This is binary classification because the output is late or not late.
+
+Inference:
+Using a trained model to predict on new unseen data. The repository performs offline inference on the held-out test set, but it does not expose a production prediction API.
+
+
+5. HIGH-LEVEL ARCHITECTURE
+--------------------------
+
+CSV source files
+      |
+      v
+Python ingestion (pandas + Snowflake connector; referenced by the project)
+      |
+      v
+Snowflake RAW schema
+  - RAW_SUPPLY_CHAIN
+  - RAW_WEB_TRAFFIC
+      |
+      v
+dbt staging views
+  - stg_orders
+  - stg_customers
+  - stg_products
+  - stg_web_traffic
+      |
+      v
+dbt marts tables
+  - fct_orders
+  - dim_customers
+  - dim_products
+  - dim_geography
+      |
+      +--------------------------+
+      |                          |
+      v                          v
+dbt reporting tables        Offline ML training
+  - delivery KPIs             - Snowflake query
+  - revenue analysis          - feature encoding
+  - risk summary              - train/test split
+  - web traffic               - XGBoost vs LightGBM
+      |                       - MLflow + SHAP
+      v                       - CSV/model artifacts
+Tableau dashboards
+
+Cross-cutting automation:
+- Airflow schedules the ingestion and dbt analytics flow daily at 6:00 AM.
+- GitHub Actions runs dbt checks on pushes and pull requests to main.
+- dbt tests enforce structural and business data-quality rules.
+
+
+6. WHY THIS ARCHITECTURE WAS CHOSEN
+----------------------------------
+
+Separation of concerns:
+Raw ingestion, cleaning, business modeling, reporting, orchestration, and machine learning are kept in separate layers. A change to a dashboard metric does not require rewriting CSV ingestion.
+
+Layered transformations:
+- RAW preserves source-shaped data and supports reprocessing/auditing.
+- STAGING standardizes names and types.
+- MARTS represents reusable business entities and events.
+- REPORTING pre-aggregates dashboard-friendly metrics.
+
+Warehouse-first compute:
+dbt pushes SQL execution into Snowflake. This avoids moving the whole dataset to an application for ordinary analytics and uses Snowflake's scalable compute.
+
+Views for staging:
+Staging logic is relatively light: selecting, renaming, casting, and deriving fields. Views reduce storage duplication.
+
+Tables for marts/reporting:
+Joins and aggregations can be expensive and are queried repeatedly by BI tools. Persisting results as tables improves query latency.
+
+Central fact table:
+fct_orders gives downstream models a consistent definition of delivery performance, time fields, and profitability. This reduces duplicated business logic.
+
+Tree-based ML models:
+XGBoost and LightGBM work well for tabular classification, learn nonlinear relationships and feature interactions, and usually require less preprocessing than neural networks.
+
+AUC-ROC for model selection:
+AUC-ROC evaluates ranking quality across all classification thresholds. LightGBM was chosen because its AUC-ROC (0.7308) was slightly higher than XGBoost's (0.7305). The difference is extremely small, so a stronger evaluation would include cross-validation, confidence intervals, operational cost, latency, and stability.
+
+SHAP:
+SHAP explains how features influence predictions. It is useful because operations users need a reason for a risk score, not only a number.
+
+
+7. TECHNOLOGY STACK AND DECISIONS
+---------------------------------
+
+Python 3.12:
+Used for data loading and ML. It provides mature libraries for data manipulation, database access, modeling, and explainability.
+
+pandas:
+Used for in-memory tabular processing and reading Snowflake query results. It is convenient at this dataset size but may not be suitable for very large ingestion workloads.
+
+snowflake-connector-python:
+Connects Python to Snowflake for loading/querying data.
+
+Snowflake:
+Acts as the analytical source of truth. It separates storage and compute, scales warehouses independently, supports SQL, and integrates with dbt and Tableau. The README mentions an X-Small warehouse with auto-suspend for cost control.
+
+dbt:
+Turns SQL SELECT statements into version-controlled warehouse models. ref() creates dependencies between models; source() refers to external raw tables. dbt also supplies documentation, lineage, tests, and environment-based builds.
+
+Apache Airflow 2.8.4:
+Schedules and orders pipeline tasks. It handles dependencies, retry policy, visibility, and daily execution.
+
+GitHub Actions:
+Provides CI for SQL/model changes. It installs dbt-snowflake, creates a runtime profile from environment variables and a GitHub secret, then executes dbt commands.
+
+Tableau:
+Consumes reporting tables for interactive dashboards. No Tableau workbook is present in this repository, so the dashboard is documented but cannot be inspected here.
+
+scikit-learn:
+Provides train_test_split, LabelEncoder, and evaluation metrics.
+
+XGBoost and LightGBM:
+Gradient-boosted tree implementations used as candidate classifiers.
+
+MLflow:
+Tracks experiment parameters, metrics, and model artifacts locally.
+
+SHAP:
+Generates feature-attribution analysis and the saved shap_summary.png image.
+
+Git/GitHub:
+Provides version control, code review, collaboration, and CI triggers.
+
+
+8. DBT MODEL-BY-MODEL WALKTHROUGH
+---------------------------------
+
+A. sources.yml
+
+Declares the two raw Snowflake tables as dbt sources. Source declarations make raw dependencies explicit and enable lineage/documentation.
+
+B. stg_orders.sql
+
+Reads RAW.RAW_SUPPLY_CHAIN and:
+- Renames uppercase source columns to consistent snake_case names.
+- Converts order and shipping date strings to timestamps.
+- Keeps delivery, order, financial, product, geography, customer, and department fields.
+- Derives days_late = actual shipping days - scheduled shipping days.
+
+Example:
+If actual shipping took 5 days and the schedule allowed 3 days, days_late = 2.
+
+C. stg_customers.sql
+
+Selects distinct customer attributes from the raw order-item source. Its intended grain is one row per customer.
+
+D. stg_products.sql
+
+Selects distinct product, category, and department attributes. Its intended grain is one row per product_card_id.
+
+E. stg_web_traffic.sql
+
+Renames access-log fields, parses visit timestamps, and exposes time and product attributes.
+
+F. fct_orders.sql
+
+Builds the core order-item fact from stg_orders. It adds:
+- order_month and order_year for aggregation.
+- order_day_of_week.
+- delivery_performance: Late, On Time, or Early based on days_late.
+- order_profitability: Loss, Break Even, or Profit based on benefit_per_order.
+
+G. dim_customers.sql
+
+Joins customer details with aggregated order history and derives:
+- Total orders/items, sales, benefit, and late deliveries.
+- First and last order date.
+- Late-delivery percentage.
+- Customer value tier: High (>= 1000 sales), Mid (>= 500), otherwise Low.
+
+These tier thresholds are business rules. In an interview, say they should ideally be validated with stakeholders or replaced with data-driven quantiles.
+
+H. dim_products.sql
+
+Adds product-level sales, unit, discount, profit, and delivery statistics. It assigns price tiers: Premium (>= 500), Mid Range (>= 100), otherwise Budget.
+
+I. dim_geography.sql
+
+Builds a geography hierarchy and attaches delivery metrics aggregated by order_region.
+
+Important caveat: the model creates distinct region/country/state/city combinations, but metrics are aggregated only by region and then repeated across every location in that region. Therefore, it is not truly one row per region, and summing its regional metrics across rows will double-count. A better design would either have one row per region or aggregate metrics at the complete market/region/country/state/city grain and create a surrogate geography key.
+
+J. rpt_delivery_kpis.sql
+
+Aggregates by month, year, shipping mode, market, region, customer segment, and department. It calculates order counts, late rate, actual/scheduled days, days late, sales, benefit, profit ratio, and performance counts.
+
+K. rpt_revenue_analysis.sql
+
+Aggregates sales, value, benefit, profit, discounts, units, loss/profit counts, sales at risk, and sales on time across business dimensions.
+
+L. rpt_risk_prediction.sql
+
+Despite its name, this table does not contain individual ML predictions. It summarizes historical risk rates and financial exposure by time and business dimensions. A clearer name would be rpt_risk_features or rpt_historical_risk_summary.
+
+M. rpt_web_traffic.sql
+
+Aggregates visits and approximate unique visitors by month, hour, department, category, and product. It classifies the hour into Late Night, Morning, Afternoon, or Evening.
+
+
+9. COMPLETE ANALYTICS DATA FLOW
+--------------------------------
+
+Step 1: Source files are obtained.
+The supply-chain CSV has transactional data and the access-log CSV has browsing data.
+
+Step 2: Python ingestion loads raw tables.
+The documented ingestion layer uses pandas and the Snowflake connector. Raw tables are expected in SUPPLY_CHAIN_DB.RAW.
+
+Repository caveat: airflow and README reference ingestion/load_to_snowflake.py, but that file is not currently present. Therefore, raw ingestion cannot be reproduced from this checkout without restoring or rewriting it.
+
+Step 3: dbt resolves its dependency graph.
+source('raw', ...) identifies raw inputs. ref('model_name') creates model dependencies and ensures upstream models run first.
+
+Step 4: Staging views clean the raw data.
+Fields are renamed, dates are parsed, entities are deduplicated, and days_late is derived.
+
+Step 5: Mart tables apply reusable business logic.
+fct_orders creates standard delivery and profitability classifications. Dimension models provide customer, product, and geographic views.
+
+Step 6: Reporting tables aggregate for consumers.
+Tableau can query smaller, business-friendly tables instead of repeatedly scanning and grouping the full fact table.
+
+Step 7: Tests validate the results.
+If tests fail, bad data should be prevented from being trusted downstream.
+
+Step 8: Tableau consumes reporting tables.
+Operations and business users slice KPIs across shipping mode, geography, customer segment, department, and time.
+
+
+10. AIRFLOW EXECUTION FLOW
+--------------------------
+
+DAG ID: supply_chain_risk_pipeline
+Schedule: 0 6 * * * (every day at 6:00 AM in the Airflow environment's configured timezone)
+Start date: January 1, 2026
+catchup=False: Airflow does not automatically create all missed historical runs.
+depends_on_past=False: today's task does not depend on yesterday's same task succeeding.
+Retries: one retry after five minutes.
+
+Task sequence:
+
+1. load_raw_data_to_snowflake
+   Executes the ingestion script.
+
+2. dbt_build
+   Builds models. Note that dbt build also runs tests for selected resources.
+
+3. dbt_test
+   Runs tests again. This is redundant after an unqualified dbt build, although a separate test task may provide clearer task-level monitoring.
+
+4. verify_row_counts
+   Connects to Snowflake and asserts that RAW_SUPPLY_CHAIN and STG_ORDERS each contain exactly 180,519 rows.
+
+Important operational caveats:
+- Bash commands contain an absolute macOS path (/Users/prajwalshekar/...), so the DAG is not portable.
+- Database account, user, and ACCOUNTADMIN role are hard-coded. Production should use Airflow Connections or a secret manager and least-privilege roles.
+- Exact fixed row counts will fail when legitimate new data arrives. Reconciliation should compare source and target counts for the current batch or enforce an expected range.
+- The DAG does not train or score the ML model.
+- The code uses BashOperator for everything; dedicated operators or TaskFlow tasks could improve observability and portability.
+
+
+11. CI/CD FLOW
+---------------
+
+The GitHub Actions workflow triggers on pushes and pull requests to main.
+
+It:
+1. Checks out code.
+2. Installs Python 3.12.
+3. Installs dbt-snowflake.
+4. Creates ~/.dbt/profiles.yml using environment values and SNOWFLAKE_PASSWORD from GitHub Secrets.
+5. Runs dbt deps.
+6. Runs dbt build.
+7. Runs dbt test.
+
+Why it matters:
+A SQL change can silently alter business metrics. CI catches broken SQL, failed uniqueness/not-null rules, invalid enumerations, and relationship failures before a change is merged.
+
+Improvements:
+- Pin dependency versions for reproducible builds.
+- Use a restricted CI role rather than ACCOUNTADMIN.
+- Build into an isolated CI schema to avoid modifying shared production tables.
+- Avoid the duplicate dbt test after dbt build unless the selection strategy makes it necessary.
+- Upgrade older checkout/setup action versions after compatibility testing.
+
+
+12. DATA QUALITY STRATEGY
+-------------------------
+
+Generic dbt tests:
+- unique: ensures a key appears only once.
+- not_null: ensures required fields exist.
+- accepted_values: restricts categories such as shipping mode or market.
+- relationships: checks referential integrity, similar to a foreign-key check.
+
+Custom SQL tests:
+- assert_shipping_days_range returns rows whose actual shipping days are outside 0-6.
+- assert_late_risk_matches_status returns rows where risk=1 but status is not Late delivery.
+
+How dbt tests work:
+A test query succeeds when it returns zero invalid rows. Any returned row is a failure.
+
+Interview point:
+Testing is layered. Structural tests check shape and keys; domain tests check allowed values; relationship tests check model consistency; custom tests check business rules.
+
+Possible missing tests:
+- Verify days_late equals actual minus scheduled days.
+- Check sales/quantity ranges.
+- Test source freshness.
+- Test the intended unique grain of dim_geography and every reporting table.
+- Check that late_delivery_risk=0 is consistent with all permitted non-late statuses.
+- Reconcile source and target counts per load rather than a permanent fixed number.
+
+
+13. MACHINE-LEARNING FLOW
+-------------------------
+
+Step 1: Extract training data.
+ml/train_model.py queries FCT_ORDERS from Snowflake.
+
+Step 2: Choose features.
+Categorical features:
+- SHIPPING_MODE
+- MARKET
+- ORDER_REGION
+- CUSTOMER_SEGMENT
+- DEPARTMENT_NAME
+
+Numeric features:
+- DAYS_FOR_SHIPMENT_SCHEDULED
+- ORDER_ITEM_QUANTITY
+- ORDER_ITEM_DISCOUNT_RATE
+- ORDER_ITEM_PROFIT_RATIO
+
+Target:
+- LATE_DELIVERY_RISK
+
+Step 3: Encode categorical values.
+LabelEncoder maps each category to an integer. The encoders are retained so new inputs can use the same mapping.
+
+Caveat: LabelEncoder introduces an artificial numeric order between categories. Tree models can still split those values, but one-hot encoding, native categorical handling, or a fitted preprocessing pipeline is usually safer. Unseen categories at inference will also cause errors unless explicitly handled.
+
+Step 4: Split data.
+80% is used for training and 20% for testing. random_state=42 makes the split repeatable. stratify=y preserves the approximate late/non-late ratio in both sets.
+
+Caveat: orders are historical time-series-like data. A random split can mix future and past patterns and overestimate real deployment performance. A time-based split—train on earlier orders and test on later orders—is a stronger design.
+
+Step 5: Handle class imbalance.
+scale_pos_weight = number of negative training samples / number of positive training samples. This changes the model's penalty for classes. Because the positive class is actually slightly more common here, the value is below 1; the project should verify that weighting improves the desired operational metric.
+
+Step 6: Train XGBoost and LightGBM.
+Both use 200 trees, depth 6, learning rate 0.1, row sampling 0.8, and column sampling 0.8.
+
+Step 7: Evaluate.
+Reported results:
+- XGBoost: accuracy 69.64%, precision 84.23%, recall 54.92%, F1 66.49%, AUC-ROC 0.7305.
+- LightGBM: accuracy 69.65%, precision 84.67%, recall 54.52%, F1 66.33%, AUC-ROC 0.7308.
+
+Step 8: Select the model.
+LightGBM wins by AUC-ROC. The margin is only 0.0003, so it should not be described as a decisive superiority.
+
+Step 9: Explain predictions.
+SHAP TreeExplainer is run on up to 5,000 test rows and saves shap_summary.png. The README states shipping mode is the strongest predictor and scheduled shipping days is second.
+
+Step 10: Save artifacts.
+The script saves the selected model, category encoders, a SHAP plot, and test-set predictions. In this checkout, predictions.csv and shap_summary.png are present, but the documented best_model.pkl and encoders.pkl files are absent.
+
+Step 11: Track experiments.
+MLflow records parameters, metrics, and models in a local file-based tracking directory.
+
+
+14. UNDERSTANDING THE ML METRICS
+--------------------------------
+
+Confusion matrix terms:
+- True Positive: predicted late, actually late.
+- False Positive: predicted late, actually on time.
+- True Negative: predicted on time, actually on time.
+- False Negative: predicted on time, actually late.
+
+Accuracy = correct predictions / all predictions.
+It is intuitive but can mislead on imbalanced data.
+
+Precision = true positives / all predicted positives.
+Of orders flagged as risky, how many were actually late? LightGBM's reported 84.67% precision means its risk alerts are often correct.
+
+Recall = true positives / all actual positives.
+Of all truly late orders, how many did the model catch? A 54.52% recall means it misses roughly 45% of late cases at the default threshold.
+
+F1 score:
+The harmonic mean of precision and recall. Useful when both false alerts and missed delays matter.
+
+AUC-ROC:
+Measures how well the model ranks a random late order above a random non-late order across thresholds. 0.5 is random and 1.0 is perfect.
+
+Business threshold:
+The default probability threshold is normally 0.5, but it should be selected using business costs. If missing a late delivery is very expensive, lower the threshold to increase recall, accepting more false alerts.
+
+
+15. WHAT IS ACTUALLY IMPLEMENTED VERSUS DOCUMENTED
+--------------------------------------------------
+
+Implemented and visible in this repository:
+- dbt project configuration.
+- Four staging models, four mart models, and four reporting models.
+- Schema and custom dbt tests.
+- An Airflow DAG definition.
+- A GitHub Actions workflow.
+- Offline XGBoost/LightGBM training code with MLflow and SHAP.
+- Saved predictions CSV and SHAP image.
+
+Documented but not present or not verifiable here:
+- ingestion/load_to_snowflake.py is referenced but missing.
+- Raw CSV files are not in the repository.
+- Tableau workbook/dashboard files are not present.
+- Snowflake DDL/setup scripts are not present.
+- MLflow run data is not present.
+- Saved model and encoder pickle files are not present in ml/outputs.
+
+Not implemented as a production ML system:
+- No model-serving API.
+- No scheduled model retraining in Airflow.
+- No batch-scoring job for new orders.
+- No writing of individual risk scores back to Snowflake.
+- No feature store or unified training/inference preprocessing pipeline.
+- No drift, model-quality, or service monitoring.
+
+Use these distinctions in an interview. Say “offline predictive modeling component” instead of claiming “real-time production ML deployment.”
+
+
+16. IMPORTANT CODE ISSUES AND DESIGN RISKS
+------------------------------------------
+
+1. Missing ingestion implementation
+The DAG's first task cannot run from this checkout because ingestion/load_to_snowflake.py is absent.
+
+2. Portability
+Airflow and ML artifact paths are hard-coded to one user's home directory. Paths should come from configuration/environment variables or be derived from the repository/DAG location.
+
+3. Security and least privilege
+The account/user identifiers and ACCOUNTADMIN role are embedded in code. The password correctly comes from an environment variable, but production should use Airflow Connections/secrets and a dedicated restricted role.
+
+4. ML is outside orchestration
+Airflow runs ingestion and dbt only. It never invokes ml/train_model.py or an inference task.
+
+5. Incorrect output name
+The predictions file uses the column FRAUD_PROBABILITY even though the problem is late delivery. It should be LATE_DELIVERY_PROBABILITY.
+
+6. Potential target/temporal leakage
+ORDER_ITEM_PROFIT_RATIO may not be known at the moment a delivery-risk decision is made. Every feature must be checked for availability at prediction time. If the model is intended to score immediately when an order is placed, only fields known then are valid.
+
+7. Random rather than temporal validation
+Random splitting may hide changing behavior over time and allow very similar orders/customers in both train and test sets.
+
+8. Model/data unit mismatch
+The README says “order-level,” but FCT_ORDERS is at order-item grain. Multi-item orders can appear multiple times and can leak across a random split. Decide whether prediction is per order or per order item, aggregate accordingly, and split by order_id.
+
+9. No true prediction integration
+rpt_risk_prediction contains aggregated historical outcomes, not model-generated probabilities.
+
+10. Geography model grain
+Regional metrics are duplicated over distinct cities/states within a region.
+
+11. Fixed row-count assertion
+Exactly 180,519 is valid for a static demo dataset but incompatible with continuing production ingestion.
+
+12. dbt build plus dbt test duplication
+dbt build already includes tests in dependency order. Running all tests immediately again increases runtime/cost.
+
+13. Reproducibility
+The ML script does not pin package versions here, and the SHAP sample uses np.random.choice without a fixed NumPy seed.
+
+14. Incomplete prediction output traceability
+predictions.csv contains encoded features but no order_item_id/order_id, making predictions difficult to trace back to business records.
+
+15. No null/imputation pipeline
+The code assumes selected features are usable as-is. Production training should explicitly validate or impute missing values.
+
+
+17. A BETTER PRODUCTION DESIGN
+------------------------------
+
+1. Land immutable files in cloud object storage with load date, checksum, and batch ID.
+2. Use Snowpipe or a reliable incremental ingestion job rather than reloading all CSV rows.
+3. Add dbt source freshness, incremental models, snapshots where history matters, and explicit contracts.
+4. Separate DEV, CI, and PROD schemas and use least-privilege roles.
+5. Define prediction grain as one row per order and create a point-in-time-correct feature table.
+6. Package preprocessing and the model together so training and inference apply identical transformations.
+7. Use temporal validation, cross-validation where appropriate, hyperparameter tuning, and probability calibration.
+8. Select a decision threshold using the cost of missed delays versus unnecessary intervention.
+9. Register/version the winning model in MLflow Model Registry.
+10. Add an Airflow batch-scoring task that writes order_id, risk_probability, risk_band, model_version, scored_at, and explanations to Snowflake.
+11. Let Tableau show current at-risk orders and recommended actions, not only historical aggregates.
+12. Monitor data drift, prediction drift, delayed labels, precision/recall, pipeline freshness, failures, and Snowflake cost.
+
+Possible production flow:
+
+New order -> validated feature row -> registered model -> risk probability
+          -> Snowflake prediction table -> Tableau/alert workflow
+          -> eventual delivery result -> monitoring and future retraining
+
+
+18. TRADEOFFS TO DISCUSS IN AN INTERVIEW
+----------------------------------------
+
+Batch versus real time:
+Daily batch processing is simpler and cheaper. Real-time scoring is justified only if teams can act immediately and delay costs are high.
+
+Views versus tables:
+Views improve freshness and reduce storage; tables improve repeated-query speed. The current materialization strategy is a reasonable small-project compromise.
+
+Full refresh versus incremental:
+Full refresh is easy and deterministic at 180K rows. Incremental processing becomes important as data volume and history grow, but requires careful late-arriving-data and update logic.
+
+Precision versus recall:
+High precision reduces wasted interventions; high recall catches more risky shipments. The correct threshold depends on operational capacity and business cost.
+
+Interpretability versus performance:
+Boosted trees can outperform simple linear models, while SHAP adds explanations. A logistic-regression baseline should still be included for comparison.
+
+Managed cloud tools versus local/open source:
+Snowflake and dbt Cloud simplify scaling and management but add cost and vendor dependence. Airflow provides flexibility but has operational overhead.
+
+
+19. A STRONG TWO-MINUTE INTERVIEW EXPLANATION
+---------------------------------------------
+
+“I built a supply-chain risk intelligence project around the DataCo dataset to help operations teams identify late-delivery patterns and estimate risk earlier. The transactional dataset contains 180,519 order-item records, and there is also a 469,977-row web-traffic dataset.
+
+The solution follows an ELT architecture. Source data is loaded into Snowflake RAW tables, and dbt transforms it through three layers. Staging views standardize names, parse timestamps, and derive fields such as days late. The mart layer creates a central order-item fact plus customer, product, and geography dimensions. Reporting tables then aggregate delivery KPIs, revenue exposure, historical risk, and web traffic for Tableau.
+
+Airflow defines a daily 6 AM workflow for ingestion, dbt build, tests, and row-count verification. GitHub Actions provides CI on pushes and pull requests. Data quality is enforced with uniqueness, null, accepted-value, relationship, and custom business-rule tests.
+
+For the predictive component, I trained XGBoost and LightGBM on order-related features, tracked experiments with MLflow, and used SHAP for explainability. LightGBM had the best reported AUC-ROC at 0.7308, although the difference from XGBoost was only 0.0003.
+
+The current project proves the analytics and offline modeling flow, but I would not describe it as fully productionized. The next steps are point-in-time feature validation, order-level temporal evaluation, model registry and batch scoring, prediction write-back to Snowflake, and drift monitoring.”
+
+
+20. COMMON TECHNICAL INTERVIEW QUESTIONS AND ANSWERS
+----------------------------------------------------
+
+Q1. Why did you use dbt?
+A. dbt lets me manage warehouse SQL as modular, version-controlled models. ref() provides dependency lineage, tests protect data quality, and materializations let me choose views or tables by layer.
+
+Q2. Why Snowflake instead of PostgreSQL?
+A. PostgreSQL could handle this demo volume, but Snowflake is designed for analytical workloads, separates storage from compute, supports scalable concurrency, and integrates cleanly with dbt and Tableau. The choice also demonstrates a modern cloud data stack. For a small cost-sensitive deployment, PostgreSQL may be sufficient.
+
+Q3. Why use a star-schema-like design?
+A. A central fact at a clearly defined event grain plus descriptive dimensions makes analytical queries consistent and understandable. It reduces repeated joins and conflicting KPI definitions for BI consumers.
+
+Q4. What is the grain of fct_orders?
+A. One row per order item, keyed by order_item_id. order_id is not necessarily unique because an order can contain multiple items.
+
+Q5. Why not train a neural network?
+A. The problem uses medium-sized structured tabular data. Gradient-boosted trees usually provide strong performance, faster iteration, and easier explanation on this type of data. A neural network would add complexity without a demonstrated benefit.
+
+Q6. Why compare XGBoost and LightGBM?
+A. Both are strong boosted-tree baselines with different tree-growth and optimization implementations. Comparing them avoids committing to one algorithm without evidence.
+
+Q7. Why is accuracy not enough?
+A. Class balance and error costs matter. A model can achieve good accuracy while missing many late deliveries. Precision, recall, F1, PR-AUC, ROC-AUC, and a cost-based threshold give a fuller view.
+
+Q8. What does the reported LightGBM recall tell you?
+A. At the default threshold, it catches about 54.5% of actual late records, so it misses about 45.5%. That may be unacceptable if missed delays are costly, and the threshold should be tuned.
+
+Q9. What is data leakage?
+A. Leakage occurs when training uses information unavailable at real prediction time or information derived from the target. It makes offline results look better than real-world performance. I would audit profit-related fields and split data by time and order.
+
+Q10. What does stratify=y do?
+A. It keeps approximately the same target-class proportions in the training and test sets.
+
+Q11. What does random_state=42 do?
+A. It makes the train/test split and supported model randomness repeatable. The number 42 has no statistical meaning.
+
+Q12. Why use SHAP?
+A. It gives global and row-level feature contributions, helping engineers validate behavior and operations teams understand why an order was flagged.
+
+Q13. How would you handle unseen categories?
+A. Replace direct LabelEncoder inference with a fitted preprocessing pipeline that has explicit unknown handling, use one-hot encoding with handle_unknown='ignore', or use LightGBM's carefully managed categorical support.
+
+Q14. How would you prevent duplicate loads?
+A. Assign a stable business/event key and batch ID, stage the incoming data, then MERGE into the target. Track file checksum and ingestion metadata so retries are idempotent.
+
+Q15. What is idempotency?
+A. Re-running a task produces the same correct state instead of duplicating or corrupting data. It is essential because Airflow retries tasks.
+
+Q16. How does dbt know model order?
+A. ref() calls form the dependency graph. dbt topologically orders execution so upstream models are available before downstream ones.
+
+Q17. What happens when a dbt test fails?
+A. The command returns a failure status, causing the Airflow or GitHub Actions task to fail. That creates visibility and can block downstream publishing or merging.
+
+Q18. Why use catchup=False?
+A. When the scheduler starts, it prevents automatic execution of every missed interval since the start date. That is useful when historic runs are unnecessary or potentially expensive.
+
+Q19. How would you scale this to millions or billions of rows?
+A. Use bulk/object-storage ingestion, incremental dbt models, clustering based on actual query profiles, right-sized auto-suspending warehouses, partition-aware processing, and aggregated BI tables. Avoid loading the entire dataset into pandas for training.
+
+Q20. How would you monitor the system?
+A. Monitor pipeline success/duration, source freshness, row and null anomalies, dbt test results, Snowflake usage, feature drift, prediction distribution, delayed ground-truth performance, and alert/action outcomes.
+
+Q21. What was the hardest architectural decision?
+A. A good answer is defining grain and layer boundaries. Order-item grain preserves product detail, but prediction may be needed at order grain. That decision affects aggregation, leakage prevention, evaluation, and how users act on predictions.
+
+Q22. Is rpt_risk_prediction actually a prediction table?
+A. No. It is an aggregated historical-risk table. Actual test predictions are produced by the Python script into a CSV, and production should write scored order records back to a dedicated Snowflake table.
+
+Q23. Why is First Class riskier despite being faster?
+A. The data shows association, not causation. First Class may have a shorter promised window, different customer/order mix, or operational constraints. I would analyze scheduled versus actual days and control for region/product/time before making a causal claim.
+
+Q24. What would you improve first?
+A. Restore idempotent ingestion, make configuration portable and secure, fix model grain and temporal validation, remove leakage-prone fields, then schedule batch scoring and write traceable risk scores to Snowflake.
+
+
+21. BEHAVIORAL/OWNERSHIP QUESTIONS
+----------------------------------
+
+“Tell me about a tradeoff you made.”
+Explain why staging uses views while downstream aggregate layers use tables: lower duplication upstream and faster repeated BI queries downstream.
+
+“Tell me about a quality issue you prevented.”
+Discuss accepted-value and relationship tests plus the custom rule linking late risk to delivery status. Mention that quality rules turn hidden assumptions into executable checks.
+
+“How did you make the work maintainable?”
+Discuss modular dbt models, source/ref lineage, centralized business rules in fct_orders, Git version control, CI, and orchestration.
+
+“What would you do differently?”
+Be candid: define the order-level prediction contract first, use a temporal/group split, package preprocessing with the model, use portable configuration, and integrate batch inference and monitoring.
+
+
+22. FINAL REVISION CHECKLIST
+----------------------------
+
+Before an interview, be able to explain without notes:
+
+- The business problem and who acts on the result.
+- ETL versus ELT and why this project is mainly ELT.
+- The grain of every major model.
+- RAW -> staging -> marts -> reporting.
+- source() versus ref() in dbt.
+- Views versus tables.
+- Fact versus dimension tables.
+- Airflow task order and retry/catchup behavior.
+- What GitHub Actions validates.
+- unique, not_null, accepted_values, relationships, and custom tests.
+- All nine ML features and the target.
+- Why boosted trees were used.
+- Accuracy, precision, recall, F1, and AUC-ROC.
+- Why LightGBM was selected and why the margin is not decisive.
+- What SHAP contributes.
+- The difference between offline training and production inference.
+- Leakage, temporal validation, idempotency, drift, and least privilege.
+- At least three honest limitations and a prioritized improvement plan.
+
+Most important interview habit:
+Always separate what the code currently proves from what a production architecture would add. Clear boundaries, correct grain, justified tradeoffs, and honest limitations demonstrate senior engineering judgment.
