@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: "Fact table - one row per order item - 180,519 rows"
+    columns:
+      - name: order_item_id
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+        tests:
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+      - name: product_card_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_card_id
+      - name: late_delivery_risk
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: shipping_mode
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Standard Class', 'First Class', 'Second Class', 'Same Day']
+      - name: delivery_performance
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Late', 'On Time', 'Early']
+      - name: order_profitability
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Loss', 'Break Even', 'Profit']
+      - name: market
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['LATAM', 'Europe', 'Pacific Asia', 'USCA', 'Africa']
+      - name: order_date
+        tests:
+          - not_null
+      - name: sales
+        tests:
+          - not_null
+      - name: days_late
+        tests:
+          - not_null
+
+  - name: dim_customers
+    description: "Customer dimension with order metrics"
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_segment
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Consumer', 'Corporate', 'Home Office']
+      - name: customer_value_tier
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['High Value', 'Mid Value', 'Low Value']
+
+  - name: dim_products
+    description: "Product dimension with order metrics"
+    columns:
+      - name: product_card_id
+        tests:
+          - unique
+          - not_null
+      - name: product_name
+        tests:
+          - not_null
+      - name: product_price_tier
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Premium', 'Mid Range', 'Budget']
+
+  - name: dim_geography
+    description: "Geography dimension with delivery metrics"
+    columns:
+      - name: order_region
+        tests:
+          - not_null
+      - name: market
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['LATAM', 'Europe', 'Pacific Asia', 'USCA', 'Africa']
