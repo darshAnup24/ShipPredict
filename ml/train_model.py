@@ -19,19 +19,29 @@ import pickle
 import warnings
 warnings.filterwarnings('ignore')
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing required env var: {name}")
+    return value
+
+
 # ─────────────────────────────────────────
 # STEP 1 — Connect to Snowflake and pull data
 # ─────────────────────────────────────────
 print("Connecting to Snowflake...")
 
 conn = snowflake.connector.connect(
-    account='svibshq-xeb14052',
-    user='PGORKHAR22',
-    password=os.environ.get('SNOWFLAKE_PASSWORD'),
-    role='ACCOUNTADMIN',
-    warehouse='SUPPLY_CHAIN_WH',
-    database='SUPPLY_CHAIN_DB',
-    schema='STAGING'
+    account=_require_env("SNOWFLAKE_ACCOUNT"),
+    user=_require_env("SNOWFLAKE_USER"),
+    password=_require_env("SNOWFLAKE_PASSWORD"),
+    role=os.environ.get("SNOWFLAKE_ROLE", "ACCOUNTADMIN"),
+    warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "SUPPLY_CHAIN_WH"),
+    database=os.environ.get("SNOWFLAKE_DATABASE", "SUPPLY_CHAIN_DB"),
+    schema=os.environ.get("SNOWFLAKE_ML_SCHEMA", "STAGING"),
 )
 
 print("Connected. Pulling fct_orders data...")
@@ -111,9 +121,7 @@ print(f"Scale pos weight: {scale_pos_weight:.2f}")
 # ─────────────────────────────────────────
 # STEP 5 — Set MLflow tracking
 # ─────────────────────────────────────────
-mlflow_dir = os.path.expanduser(
-    '~/supply-chain-risk-intelligence/ml/mlruns'
-)
+mlflow_dir = os.path.join(PROJECT_ROOT, 'ml', 'mlruns')
 mlflow.set_tracking_uri(f"file://{mlflow_dir}")
 mlflow.set_experiment("supply_chain_late_delivery_prediction")
 
@@ -222,10 +230,8 @@ else:
 # ─────────────────────────────────────────
 print("\nGenerating SHAP explainability...")
 
-os.makedirs(
-    os.path.expanduser('~/supply-chain-risk-intelligence/ml/outputs'),
-    exist_ok=True
-)
+outputs_dir = os.path.join(PROJECT_ROOT, 'ml', 'outputs')
+os.makedirs(outputs_dir, exist_ok=True)
 
 # Use sample of 5000 rows for SHAP speed
 sample_idx = np.random.choice(len(X_test), size=min(5000, len(X_test)), replace=False)
@@ -248,9 +254,7 @@ shap.summary_plot(
 )
 plt.title(f'SHAP Feature Importance — {best_model_name}')
 plt.tight_layout()
-shap_path = os.path.expanduser(
-    '~/supply-chain-risk-intelligence/ml/outputs/shap_summary.png'
-)
+shap_path = os.path.join(PROJECT_ROOT, 'ml', 'outputs', 'shap_summary.png')
 plt.savefig(shap_path, dpi=150, bbox_inches='tight')
 plt.close()
 print(f"SHAP plot saved to: {shap_path}")
@@ -258,12 +262,8 @@ print(f"SHAP plot saved to: {shap_path}")
 # ─────────────────────────────────────────
 # STEP 10 — Save model and encoders
 # ─────────────────────────────────────────
-model_path = os.path.expanduser(
-    '~/supply-chain-risk-intelligence/ml/outputs/best_model.pkl'
-)
-encoders_path = os.path.expanduser(
-    '~/supply-chain-risk-intelligence/ml/outputs/encoders.pkl'
-)
+model_path = os.path.join(PROJECT_ROOT, 'ml', 'outputs', 'best_model.pkl')
+encoders_path = os.path.join(PROJECT_ROOT, 'ml', 'outputs', 'encoders.pkl')
 
 with open(model_path, 'wb') as f:
     pickle.dump(best_model, f)
@@ -283,9 +283,7 @@ predictions_df['PREDICTED_LATE_DELIVERY_RISK'] = best_model.predict(X_test)
 predictions_df['FRAUD_PROBABILITY'] = best_proba
 predictions_df['MODEL_USED'] = best_model_name
 
-predictions_path = os.path.expanduser(
-    '~/supply-chain-risk-intelligence/ml/outputs/predictions.csv'
-)
+predictions_path = os.path.join(PROJECT_ROOT, 'ml', 'outputs', 'predictions.csv')
 predictions_df.to_csv(predictions_path, index=False)
 print(f"Predictions saved to: {predictions_path}")
 
@@ -302,5 +300,5 @@ print(f"Recall:     {best_metrics['recall']:.4f}")
 print(f"F1 Score:   {best_metrics['f1_score']:.4f}")
 print(f"AUC-ROC:    {best_metrics['auc_roc']:.4f}")
 print("="*50)
-print("\nOutputs saved to: ~/supply-chain-risk-intelligence/ml/outputs/")
+print(f"\nOutputs saved to: {os.path.join(PROJECT_ROOT, 'ml', 'outputs')}/")
 print("MLflow UI: run 'mlflow ui' to view experiments")

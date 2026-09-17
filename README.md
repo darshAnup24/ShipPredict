@@ -57,7 +57,25 @@ dbt run
 dbt test
 ```
 
-### 4. Train the Model
+### 4. Select Features (SHAP)
+
+Ranks a broad set of candidate features by mean |SHAP| value, drops
+those below `SHAP_MIN_RATIO` (default `0.01`) of the top feature, and
+writes the result to `ml/outputs/selected_features.json`.
+
+```bash
+python ml/select_features.py
+# Optional threshold override:
+# SHAP_MIN_RATIO=0.05 python ml/select_features.py
+```
+
+Outputs written to `ml/outputs/`:
+
+- `selected_features.json` — chosen + dropped feature lists
+- `feature_importance.csv` — ranked SHAP importance table
+- `feature_importance.png` — importance bar chart
+
+### 5. Train the Model
 
 ```bash
 python ml/train_model.py

@@ -25,8 +25,21 @@ import snowflake.connector
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SUPPLY_CHAIN_CSV = os.path.join(PROJECT_ROOT, "data", "DataCoSupplyChainDataset.csv")
-WEB_TRAFFIC_CSV = os.path.join(PROJECT_ROOT, "data", "tokenized_access_logs.csv")
+def _data_dir() -> str:
+    """Raw data folder. If DATA_DATE (YYYY-MM-DD) is set, prefer data/<DATE>/,
+    otherwise fall back to the default data/ folder."""
+    data_date = os.environ.get("DATA_DATE")
+    if data_date:
+        day_dir = os.path.join(PROJECT_ROOT, "data", data_date)
+        if os.path.isdir(day_dir):
+            return day_dir
+        print(f"WARNING: date-specific data folder {day_dir} not found, falling back to data/")
+    return os.path.join(PROJECT_ROOT, "data")
+
+DATA_DIR = _data_dir()
+
+SUPPLY_CHAIN_CSV = os.path.join(DATA_DIR, "DataCoSupplyChainDataset.csv")
+WEB_TRAFFIC_CSV = os.path.join(DATA_DIR, "tokenized_access_logs.csv")
 
 SUPPLY_CHAIN_TABLE = "RAW_SUPPLY_CHAIN"
 WEB_TRAFFIC_TABLE = "RAW_WEB_TRAFFIC"

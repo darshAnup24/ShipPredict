@@ -1,0 +1,63 @@
+flowchart TB
+    CSV["DataCo CSVs<br/>Supply-chain records and web traffic"]
+    ING["Python ingestion<br/>Column mapping and bulk loading"]
+    AF["Airflow daily warehouse DAG<br/>Load → dbt build → dbt test → row checks"]
+    CI["GitHub Actions<br/>dbt build and test on push / PR to main"]
+
+    subgraph WH["Snowflake · existing warehouse"]
+        RAW["RAW tables"]
+        STG["Staging · 4 views<br/>Clean, cast and deduplicate"]
+        MART["Marts · 4 tables<br/>fct_orders and dimensions<br/>One fact row per order item"]
+        RPT["Reporting · 4 tables<br/>Delivery, revenue, historical risk, web traffic"]
+        TESTS["86 dbt data-quality tests"]
+        RAW --> STG --> MART --> RPT
+        TESTS -. validates .-> STG
+        TESTS -. validates .-> MART
+        TESTS -. validates .-> RPT
+    end
+
+    CSV --> ING --> RAW
+    AF -. orchestrates .-> ING
+    AF -. orchestrates .-> STG
+    CI -. builds and tests .-> STG
+
+    subgraph ML["Recommended ML integration · separate training workflow"]
+        FEAT["Shared feature preparation · ADD<br/>Available-at-prediction fields<br/>Numeric date features and schema checks"]
+        SPLIT["Time-based train / validation / test · ADD<br/>Keep items of an order together"]
+        SEL["SHAP feature selection · UPDATE<br/>Fit preprocessing and selector on training only"]
+        SPEC["Selected features and fitted preprocessing<br/>Connect selection output to training"]
+        TRAIN["XGBoost and LightGBM · UPDATE<br/>Train with selected features"]
+        EVAL["Evaluation · UPDATE<br/>Select on validation ROC-AUC<br/>Final untouched test evaluation"]
+        TRACK["MLflow tracking · EXISTS<br/>Parameters, metrics and models"]
+        EXPLAIN["SHAP explanations · EXISTS"]
+        PACKAGE["Versioned model bundle · ADD<br/>Model, preprocessing and feature schema"]
+        FEAT --> SPLIT --> SEL --> SPEC --> TRAIN --> EVAL
+        TRAIN --> TRACK
+        EVAL --> EXPLAIN
+        EVAL --> PACKAGE
+    end
+
+    MART --> FEAT
+
+    subgraph PROD["Proposed production extension · not implemented"]
+        OPEN["Live open orders<br/>New operational data source"]
+        SCORE["Daily batch scoring<br/>After warehouse quality checks"]
+        PRED["Snowflake risk predictions<br/>Order-item ID, score, timestamp, model version"]
+        UI["Operations dashboard<br/>Prioritized orders for intervention"]
+        MON["Monitoring<br/>Freshness, drift and delayed-label performance"]
+        OPEN --> SCORE --> PRED --> UI
+        PRED --> MON
+    end
+
+    FEAT -. reuse feature transformations .-> SCORE
+    PACKAGE --> SCORE
+    AF -. proposed scoring task .-> SCORE
+    RPT -. proposed dashboard input .-> UI
+    MON -. trigger validated retraining .-> FEAT
+
+    classDef existing fill:#dbeafe,stroke:#2563eb,color:#172554;
+    classDef change fill:#fef3c7,stroke:#d97706,color:#78350f;
+    classDef proposed fill:#ede9fe,stroke:#7c3aed,color:#3b0764;
+    class CSV,ING,AF,CI,RAW,STG,MART,RPT,TESTS,TRACK,EXPLAIN existing;
+    class FEAT,SPLIT,SEL,SPEC,TRAIN,EVAL,PACKAGE change;
+    class OPEN,SCORE,PRED,UI,MON proposed;

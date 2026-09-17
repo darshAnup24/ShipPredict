@@ -1,19 +1,26 @@
 from datetime import datetime, timedelta
+
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
+# Absolute path to this project (must match this laptop's location)
+PROJECT_ROOT = "/home/madhav/Documents/codehemangstyle/supply-chain-risk-intelligence"
+
+# PATH that makes `python3` and `dbt` resolvable from BashOperator subprocesses
+PATH_EXPORT = 'export PATH="$HOME/.local/bin:/usr/bin:/bin:$PATH"'
+
+# Ensures the SNOWFLAKE_* variables from .env are present for every task
+LOAD_ENV = "cd {root} && set -a && . ./.env && set +a".format(root=PROJECT_ROOT)
+
 # Default arguments for the DAG
 default_args = {
-    'owner': 'prajwal_gorkhar',
+    'owner': 'madhav',
     'depends_on_past': False,
-    'email': ['pgorkhar@asu.edu'],
-    'email_on_failure': False,
-    'email_on_retry': False,
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
 
-# DAG definition
+# DAG definition - runs daily at 06:00
 dag = DAG(
     'supply_chain_risk_pipeline',
     default_args=default_args,
@@ -24,63 +31,75 @@ dag = DAG(
     tags=['supply_chain', 'dbt', 'snowflake'],
 )
 
-# Task 1 - Load raw data to Snowflake
+# Task 1 - Load that day's raw data to Snowflake
+# DATA_DATE={{ ds }} makes each scheduled run ingest data/<logical-date>/,
+# so every daily run processes that specific day's snapshot.
 load_to_snowflake = BashOperator(
     task_id='load_raw_data_to_snowflake',
-    bash_command='cd /Users/prajwalshekar/supply-chain-risk-intelligence && python3 ingestion/load_to_snowflake.py',
+    bash_command=LOAD_ENV + "\n"
+    + PATH_EXPORT + "\n"
+    + 'echo "=== Loading raw data for {{ ds }} ==="\n'
+    + "cd {root}\n".format(root=PROJECT_ROOT)
+    + 'echo "=== Source: data/{{ ds }}/ ==="\n'
+    + 'DATA_DATE={{ ds }} python3 ingestion/load_to_snowflake.py\n',
     dag=dag,
 )
 
 # Task 2 - dbt build (runs all models)
 dbt_build = BashOperator(
     task_id='dbt_build',
-    bash_command='''
-        cd /Users/prajwalshekar/supply-chain-risk-intelligence &&
-        export DBT_PROFILES_DIR=~/.dbt &&
-        dbt build --project-dir . --profiles-dir ~/.dbt
-    ''',
+    bash_command=PATH_EXPORT + "\n"
+    + "cd {root}\n".format(root=PROJECT_ROOT)
+    + "export DBT_PROFILES_DIR=$HOME/.dbt\n"
+    + 'echo "=== Running dbt build for {{ ds }} ==="\n'
+    + "dbt build --project-dir {root} --profiles-dir $HOME/.dbt\n".format(root=PROJECT_ROOT),
     dag=dag,
 )
 
-# Task 3 - dbt test (runs all 86 tests)
+# Task 3 - dbt test (runs all data quality tests)
 dbt_test = BashOperator(
     task_id='dbt_test',
-    bash_command='''
-        cd /Users/prajwalshekar/supply-chain-risk-intelligence &&
-        export DBT_PROFILES_DIR=~/.dbt &&
-        dbt test --project-dir . --profiles-dir ~/.dbt
-    ''',
+    bash_command=PATH_EXPORT + "\n"
+    + "cd {root}\n".format(root=PROJECT_ROOT)
+    + "export DBT_PROFILES_DIR=$HOME/.dbt\n"
+    + 'echo "=== Running dbt test for {{ ds }} ==="\n'
+    + "dbt test --project-dir {root} --profiles-dir $HOME/.dbt\n".format(root=PROJECT_ROOT),
     dag=dag,
 )
 
 # Task 4 - Verify row counts in Snowflake
 verify_counts = BashOperator(
     task_id='verify_row_counts',
-    bash_command='''
-        python3 -c "
+    bash_command=LOAD_ENV + "\n"
+    + PATH_EXPORT + "\n"
+    + "cd {root}\n".format(root=PROJECT_ROOT)
+    + '''python3 -c "
 import snowflake.connector
 import os
 conn = snowflake.connector.connect(
-    account='svibshq-xeb14052',
-    user='PGORKHAR22',
-    password=os.environ.get('SNOWFLAKE_PASSWORD', ''),
-    role='ACCOUNTADMIN',
-    warehouse='SUPPLY_CHAIN_WH',
-    database='SUPPLY_CHAIN_DB'
+    account=os.environ['SNOWFLAKE_ACCOUNT'],
+    user=os.environ['SNOWFLAKE_USER'],
+    password=os.environ['SNOWFLAKE_PASSWORD'],
+    role=os.environ.get('SNOWFLAKE_ROLE', 'ACCOUNTADMIN'),
+    warehouse=os.environ['SNOWFLAKE_WAREHOUSE'],
+    database=os.environ['SNOWFLAKE_DATABASE'],
 )
 cur = conn.cursor()
 cur.execute('SELECT COUNT(*) FROM SUPPLY_CHAIN_DB.RAW.RAW_SUPPLY_CHAIN')
-raw_count = cur.fetchone()[0]
+raw_sc = cur.fetchone()[0]
+cur.execute('SELECT COUNT(*) FROM SUPPLY_CHAIN_DB.RAW.RAW_WEB_TRAFFIC')
+raw_wt = cur.fetchone()[0]
 cur.execute('SELECT COUNT(*) FROM SUPPLY_CHAIN_DB.STAGING.STG_ORDERS')
-stg_count = cur.fetchone()[0]
-print(f'RAW_SUPPLY_CHAIN rows: {raw_count}')
-print(f'STG_ORDERS rows: {stg_count}')
-assert raw_count == 180519, f'Expected 180519 rows, got {raw_count}'
-assert stg_count == 180519, f'Expected 180519 rows, got {stg_count}'
-print('ALL ROW COUNTS VERIFIED SUCCESSFULLY!')
+stg = cur.fetchone()[0]
+print('RAW_SUPPLY_CHAIN rows: ' + str(raw_sc))
+print('RAW_WEB_TRAFFIC rows: ' + str(raw_wt))
+print('STG_ORDERS rows: ' + str(stg))
+assert raw_sc > 0 and stg > 0, 'Pipeline loaded zero rows - check upstream ingestion'
+assert raw_sc == stg, 'Raw (' + str(raw_sc) + ') vs staging (' + str(stg) + ') mismatch'
+print('ROW COUNTS VERIFIED SUCCESSFULLY!')
 conn.close()
 "
-    ''',
+''',
     dag=dag,
 )
 
