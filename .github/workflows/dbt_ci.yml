@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      SNOWFLAKE_ACCOUNT: svibshq-xeb14052
-      SNOWFLAKE_USER: PGORKHAR22
+      SNOWFLAKE_ACCOUNT: yd09943.me-central2.gcp
+      SNOWFLAKE_USER: madhavdarshan481
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
       SNOWFLAKE_ROLE: ACCOUNTADMIN
       SNOWFLAKE_DATABASE: SUPPLY_CHAIN_DB
