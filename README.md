@@ -90,3 +90,21 @@ Outputs are written to `ml/outputs/`:
 ## Reporting Layer
 
 The reporting models surface delivery KPIs, revenue, risk, and web traffic aggregates for business monitoring.
+
+## Streamlit Community Cloud dashboard
+
+Deploy this repository on [Streamlit Community Cloud](https://share.streamlit.io/) using branch `main` and entrypoint `dashboard.py`. Select Python 3.12 in Advanced settings. The root `requirements.txt` lists the dashboard dependencies.
+
+In the app's Advanced settings, add these secrets with values for a Snowflake user that can read the reporting tables:
+
+```toml
+SNOWFLAKE_ACCOUNT = "your-account-identifier"
+SNOWFLAKE_USER = "your-service-user"
+SNOWFLAKE_PASSWORD = "your-password"
+SNOWFLAKE_ROLE = "your-read-only-role"
+SNOWFLAKE_WAREHOUSE = "your-warehouse"
+SNOWFLAKE_DATABASE = "SUPPLY_CHAIN_DB"
+SNOWFLAKE_SCHEMA = "STAGING"
+```
+
+Keep the real values in Community Cloud secrets, not in Git. The dashboard also accepts local environment variables or a local `.env` file. The ML Insights tab displays the committed model output files; refresh them separately when retraining the model.

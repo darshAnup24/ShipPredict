@@ -13,13 +13,29 @@ st.set_page_config(page_title="Supply Chain Risk Intelligence", layout="wide")
 # ─────────────────────────────────────────
 @st.cache_resource
 def _get_conn():
-    def clean(s): return s.strip().strip(chr(39)).strip('"')
     env = {}
-    for line in open(os.path.join(os.path.dirname(__file__), ".env")):
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            env[k] = clean(v)
+    local_env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(local_env_path):
+        with open(local_env_path) as local_env:
+            for line in local_env:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    env[key] = value.strip().strip("'\"")
+
+    try:
+        env.update({key: str(value) for key, value in st.secrets.items()
+                    if key.startswith("SNOWFLAKE_")})
+    except FileNotFoundError:
+        pass
+    env.update({key: value for key, value in os.environ.items()
+                if key.startswith("SNOWFLAKE_")})
+
+    required = ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD")
+    missing = [key for key in required if not env.get(key)]
+    if missing:
+        raise RuntimeError("Missing Snowflake settings: " + ", ".join(missing))
+
     return snowflake.connector.connect(
         account=env["SNOWFLAKE_ACCOUNT"],
         user=env["SNOWFLAKE_USER"],
@@ -305,12 +321,12 @@ with tab5:
     predictions_path = os.path.join(outputs_dir, "predictions.csv")
 
     if os.path.exists(shap_path):
-        st.image(shap_path, caption="SHAP Feature Importance — Best Model", use_column_width=True)
+        st.image(shap_path, caption="SHAP Feature Importance — Best Model", use_container_width=True)
     else:
         st.info("Run `python ml/select_features.py` and `python ml/train_model.py` first to generate SHAP plots.")
 
     if os.path.exists(importance_path):
-        st.image(importance_path, caption="Feature Importance Ranking", use_column_width=True)
+        st.image(importance_path, caption="Feature Importance Ranking", use_container_width=True)
 
     if os.path.exists(predictions_path):
         st.subheader("Model Predictions (Test Set)")
