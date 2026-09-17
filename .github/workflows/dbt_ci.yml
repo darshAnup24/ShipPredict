@@ -37,20 +37,24 @@ jobs:
 
       - name: Create dbt profiles.yml
         run: |
+          if [ -z "$SNOWFLAKE_PASSWORD" ]; then
+            echo "SNOWFLAKE_PASSWORD secret is missing or empty" >&2
+            exit 1
+          fi
           mkdir -p ~/.dbt
-          cat > ~/.dbt/profiles.yml << EOF
+          cat > ~/.dbt/profiles.yml <<'EOF'
           default:
             target: dev
             outputs:
               dev:
                 type: snowflake
-                account: ${{ env.SNOWFLAKE_ACCOUNT }}
-                user: ${{ env.SNOWFLAKE_USER }}
-                password: ${{ env.SNOWFLAKE_PASSWORD }}
-                role: ${{ env.SNOWFLAKE_ROLE }}
-                database: ${{ env.SNOWFLAKE_DATABASE }}
-                warehouse: ${{ env.SNOWFLAKE_WAREHOUSE }}
-                schema: ${{ env.SNOWFLAKE_SCHEMA }}
+                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ env_var('SNOWFLAKE_USER') }}"
+                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+                database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+                schema: "{{ env_var('SNOWFLAKE_SCHEMA') }}"
                 threads: 4
           EOF
 
